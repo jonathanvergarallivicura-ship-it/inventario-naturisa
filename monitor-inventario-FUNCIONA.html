@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de Inventario SAP — Naturisa</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{ --surface:#fcfcfb; --panel:#fff; --borde:#e6e8eb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8a86;
+         --series:#2a78d6; --good:#008300; --warn:#eda100; --crit:#e34948; --azul:#0b4f8a; }
+  @media (prefers-color-scheme: dark){ :root{ --surface:#141413; --panel:#1f1f1e; --borde:#33332f; --ink:#f0efec;
+         --ink2:#c3c2b7; --muted:#8f8f88; --series:#3987e5; --good:#0ca30c; --warn:#c98500; --crit:#e66767; --azul:#3987e5; } }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; color:var(--ink); background:var(--surface); }
+  header{ background:var(--azul); color:#fff; padding:12px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+  header h1{ font-size:17px; margin:0; font-weight:600; }
+  header .right{ display:flex; align-items:center; gap:14px; font-size:13px; }
+  header button{ background:#ffffff22; border:1px solid #ffffff55; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
+  main{ padding:18px 20px; max-width:1200px; margin:0 auto; }
+  .bar{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px; font-size:13px; color:var(--ink2); }
+  .btn{ background:var(--series); color:#fff; border:0; padding:8px 15px; border-radius:7px; cursor:pointer; font-size:13px; }
+  .btn.sec{ background:transparent; color:var(--series); border:1px solid var(--series); }
+  .btn:disabled{ opacity:.5; cursor:default; }
+  .dot{ width:8px; height:8px; border-radius:50%; display:inline-block; background:var(--good); }
+  .dot.off{ background:var(--muted); }
+  input[type=search],select{ padding:8px 10px; border:1px solid var(--borde); border-radius:7px; font-size:13px; background:var(--panel); color:var(--ink); }
+  .kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:18px; }
+  .kpi{ background:var(--panel); border:1px solid var(--borde); border-radius:11px; padding:15px 16px; }
+  .kpi .n{ font-size:25px; font-weight:700; letter-spacing:-.5px; }
+  .kpi .l{ font-size:12px; color:var(--ink2); margin-top:3px; }
+  .kpi.alert .n{ color:var(--crit); }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
+  @media(max-width:820px){ .grid2{ grid-template-columns:1fr; } }
+  .panel{ background:var(--panel); border:1px solid var(--borde); border-radius:11px; padding:16px; }
+  .panel h3{ margin:0 0 12px; font-size:14px; font-weight:600; }
+  .rowbar{ display:grid; grid-template-columns:130px 1fr 70px; align-items:center; gap:10px; margin:7px 0; font-size:12px; }
+  .track{ background:color-mix(in srgb,var(--series) 12%,transparent); border-radius:4px; height:16px; overflow:hidden; }
+  .fill{ background:var(--series); height:100%; border-radius:4px; }
+  .rowbar .v{ text-align:right; color:var(--ink2); font-variant-numeric:tabular-nums; }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td{ padding:8px 10px; text-align:left; border-bottom:1px solid var(--borde); }
+  th{ color:var(--ink2); font-weight:600; position:sticky; top:0; background:var(--panel); }
+  td.num,th.num{ text-align:right; font-variant-numeric:tabular-nums; }
+  tr.low td{ background:color-mix(in srgb,var(--crit) 9%,transparent); }
+  .tag{ font-size:11px; padding:2px 7px; border-radius:20px; font-weight:600; display:inline-flex; gap:4px; align-items:center; }
+  .tag.crit{ background:color-mix(in srgb,var(--crit) 15%,transparent); color:var(--crit); }
+  .tag.ok{ background:color-mix(in srgb,var(--good) 15%,transparent); color:var(--good); }
+  .tablewrap{ max-height:460px; overflow:auto; border:1px solid var(--borde); border-radius:11px; }
+  #status{ font-size:13px; color:var(--ink2); }
+  .hint{ font-size:11.5px; color:var(--muted); }
+  #loginModal{ position:fixed; inset:0; background:#0009; display:flex; align-items:center; justify-content:center; z-index:50; }
+  .card{ background:var(--panel); border-radius:12px; padding:26px; width:340px; box-shadow:0 12px 44px #0004; }
+  .card h2{ margin:0 0 4px; color:var(--azul); font-size:20px; }
+  .card p{ margin:0 0 16px; font-size:13px; color:var(--ink2); }
+  .card label{ font-size:13px; font-weight:600; display:block; margin:12px 0 5px; }
+  .card input{ width:100%; padding:10px; border:1px solid var(--borde); border-radius:7px; font-size:14px; background:var(--surface); color:var(--ink); }
+  .card .btn{ width:100%; margin-top:18px; padding:11px; }
+  #loginStatus{ color:var(--crit); font-size:13px; min-height:18px; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📦 Monitor de Inventario SAP · Naturisa</h1>
+  <div class="right">
+    <span><span class="dot" id="liveDot"></span> <span id="liveTxt">en vivo</span></span>
+    <span id="updated">—</span>
+    <span id="who"></span>
+    <button onclick="logout()">Salir</button>
+  </div>
+</header>
+
+<main>
+  <div class="bar">
+    <button class="btn" id="btnRefresh" onclick="refrescar()">Actualizar ahora</button>
+    <label style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="autoChk" checked onchange="toggleAuto()"> auto cada
+      <select id="intervalSel" onchange="toggleAuto()">
+        <option value="30">30 s</option><option value="60" selected>1 min</option>
+        <option value="300">5 min</option><option value="900">15 min</option>
+      </select>
+    </label>
+    <input type="search" id="buscar" placeholder="Buscar material / código SAP…" oninput="pintar()">
+    <select id="filtroBodega" onchange="pintar()"><option value="">Todas las bodegas</option></select>
+    <button class="btn sec" id="btnXls" onclick="exportar()" disabled>Exportar Excel</button>
+    <span id="status">Inicia sesión para conectarte.</span>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="grid2">
+    <div class="panel"><h3>Existencias por bodega</h3><div id="porBodega"></div></div>
+    <div class="panel"><h3>⚠ Alertas de bajo stock <span class="hint">(≤ mínimo)</span></h3><div id="alertas"></div></div>
+  </div>
+  <div class="panel">
+    <h3>Detalle de inventario <span class="hint" id="detCount"></span></h3>
+    <div class="tablewrap"><table id="tabla"><thead></thead><tbody></tbody></table></div>
+  </div>
+</main>
+
+<div id="loginModal">
+  <div class="card">
+    <h2>Ingreso</h2>
+    <p>Usa tu usuario del portal Naturisa. Tus credenciales no se guardan ni se comparten.</p>
+    <label>Usuario</label>
+    <input id="loginUser" type="text" autocomplete="username" placeholder="ej. acalderon">
+    <label>Contraseña</label>
+    <input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn" id="loginBtn" onclick="doLogin()">Iniciar sesión</button>
+    <div id="loginStatus"></div>
+  </div>
+</div>
+
+<script>
+/* ═══ Conectado al Worker que YA existe (igual que el modelo bodega) ═══ */
+const GATEWAY  = 'https://naturisa-proxy.parragajonathan965.workers.dev';
+const CODE_APP = '55ab9cb4-c887-4f42-98ec-b90470be6613';
+const COMPANY_ID = 3;
+/* ════════════════════════════════════════════════════════════════════ */
+
+const AUTH_URL=GATEWAY+'/bff/web/ap1/security/api/auth';
+const PORTAL=GATEWAY+'/bff/web/portal/backoffice/api';
+const TK='nat_token', US='nat_user';
+const getToken=()=>localStorage.getItem(TK)||'';
+const espera=ms=>new Promise(r=>setTimeout(r,ms));
+const nf=n=>Number(n||0).toLocaleString('es-EC',{maximumFractionDigits:0});
+const el=id=>document.getElementById(id), val=id=>el(id).value.trim();
+
+function lista(res){ const d=res&&res.data!==undefined?res.data:res; if(Array.isArray(d))return d;
+  for(const k of ['items','list','content','rows','result']) if(d&&Array.isArray(d[k]))return d[k]; return []; }
+const pick=(o,ks)=>{ for(const k of ks){ if(o[k]!=null&&o[k]!=='')return o[k]; } return undefined; };
+const FLD={ sap:['codigoSap','codeSap','sapCode','codSap','itemCode'], name:['descripcion','description','nombre','name','itemName'],
+  qty:['qty','cantidad','stock','existencia','quantity','saldo','onHand'], um:['um','unidad','uom','unitMeasure'],
+  wh:['bodega','warehouse','almacen','warehouseName','whsName','bodegaNombre'], min:['minimo','min','stockMin','minStock','puntoReorden'] };
+
+async function apiGet(url){ for(let i=1;;i++){ let res;
+  try{ res=await fetch(url,{headers:{Accept:'application/json',Authorization:'Bearer '+getToken()}}); }
+  catch(e){ if(i<3){await espera(800*i*i);continue;} throw new Error('Red: '+e.message); }
+  if(res.status===401){ logout(); throw new Error('Sesión expirada'); }
+  if(!res.ok) throw new Error('HTTP '+res.status); return res.json(); } }
+const api=p=>apiGet(PORTAL+p);
+
+async function doLogin(){
+  const user=val('loginUser'), pass=val('loginPass'), st=el('loginStatus'), btn=el('loginBtn');
+  if(!user||!pass){ st.textContent='Ingresa usuario y contraseña'; return; }
+  btn.textContent='Ingresando…'; btn.disabled=true; st.textContent='';
+  try{
+    const res=await fetch(AUTH_URL,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json, text/plain, */*'},
+      body:JSON.stringify({userName:user,password:pass,codeApplication:CODE_APP,includeUserInfo:true})});
+    const j=await res.json();
+    if(j.code===200&&j.data?.token){ localStorage.setItem(TK,j.data.token);
+      localStorage.setItem(US,j.data.user?.fullName||j.data.fullName||user); iniciar(); }
+    else st.textContent='Usuario o contraseña incorrectos';
+  }catch(e){ st.textContent='Error de conexión: '+e.message; }
+  finally{ btn.textContent='Iniciar sesión'; btn.disabled=false; }
+}
+function logout(){ pararAuto(); localStorage.removeItem(TK); localStorage.removeItem(US); el('loginModal').style.display='flex'; }
+
+let ITEMS=[], STOCK=[], MERGED=[], TIMER=null;
+async function refrescar(){
+  const st=el('status'); st.textContent='Consultando SAP…'; el('btnRefresh').disabled=true;
+  try{
+    const [items,stock]=await Promise.all([ api(`/item?companyId=${COMPANY_ID}&PageSize=50000`), api('/item/stock') ]);
+    ITEMS=lista(items); STOCK=lista(stock);
+    const porSap=Object.fromEntries(ITEMS.map(i=>[String(pick(i,FLD.sap)),i]));
+    MERGED=STOCK.map(s=>{ const it=porSap[String(pick(s,FLD.sap))]||{}; return {
+      sap:pick(s,FLD.sap)??pick(it,FLD.sap)??'', material:pick(it,FLD.name)??pick(s,FLD.name)??'(sin descripción)',
+      bodega:pick(s,FLD.wh)??'—', qty:Number(pick(s,FLD.qty))||0, um:pick(s,FLD.um)??pick(it,FLD.um)??'', min:Number(pick(s,FLD.min)??pick(it,FLD.min))||0 }; });
+    llenarFiltroBodega(); pintar();
+    el('updated').textContent='Actualizado '+new Date().toLocaleTimeString('es-EC');
+    el('btnXls').disabled=MERGED.length===0; st.textContent=nf(MERGED.length)+' registros de existencias.';
+  }catch(e){ st.textContent='⚠ '+e.message; } finally{ el('btnRefresh').disabled=false; }
+}
+function pintar(){
+  const q=val('buscar').toLowerCase(), fb=val('filtroBodega'); let filas=MERGED;
+  if(fb) filas=filas.filter(f=>f.bodega===fb); if(q) filas=filas.filter(f=>(f.material+' '+f.sap).toLowerCase().includes(q));
+  const bodegas=new Set(MERGED.map(f=>f.bodega)), bajo=MERGED.filter(f=>f.min>0&&f.qty<=f.min);
+  el('kpis').innerHTML=[['Ítems con stock',nf(new Set(MERGED.map(f=>f.sap)).size),0],['Bodegas',nf(bodegas.size),0],
+    ['Total existencias',nf(MERGED.reduce((s,f)=>s+f.qty,0)),0],['Bajo mínimo',nf(bajo.length),1]]
+    .map(([l,n,a])=>`<div class="kpi ${a?'alert':''}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+  const porB={}; MERGED.forEach(f=>{porB[f.bodega]=(porB[f.bodega]||0)+f.qty;});
+  const arr=Object.entries(porB).sort((a,b)=>b[1]-a[1]).slice(0,12), max=Math.max(1,...arr.map(a=>a[1]));
+  el('porBodega').innerHTML=arr.map(([b,v])=>`<div class="rowbar"><span title="${b}">${b}</span><div class="track"><div class="fill" style="width:${Math.round(v/max*100)}%"></div></div><span class="v">${nf(v)}</span></div>`).join('')||'<span class="hint">Sin datos.</span>';
+  el('alertas').innerHTML=bajo.slice(0,30).map(f=>`<div class="rowbar" style="grid-template-columns:1fr 80px 70px"><span>${f.material}</span><span class="v">${nf(f.qty)} ${f.um}</span><span class="tag crit">⚠ ${nf(f.min)}</span></div>`).join('')||'<span class="tag ok">✓ Todo sobre el mínimo</span>';
+  el('detCount').textContent='· '+nf(filas.length)+' filas';
+  document.querySelector('#tabla thead').innerHTML='<tr><th>Código SAP</th><th>Material</th><th>Bodega</th><th class="num">Existencia</th><th>UM</th><th>Estado</th></tr>';
+  document.querySelector('#tabla tbody').innerHTML=filas.slice(0,500).map(f=>{ const low=f.min>0&&f.qty<=f.min;
+    return `<tr class="${low?'low':''}"><td>${f.sap}</td><td>${f.material}</td><td>${f.bodega}</td><td class="num">${nf(f.qty)}</td><td>${f.um}</td><td>${low?'<span class="tag crit">⚠ bajo</span>':'<span class="tag ok">✓</span>'}</td></tr>`; }).join('');
+}
+function llenarFiltroBodega(){ const sel=el('filtroBodega'), cur=sel.value, bs=[...new Set(MERGED.map(f=>f.bodega))].sort();
+  sel.innerHTML='<option value="">Todas las bodegas</option>'+bs.map(b=>`<option>${b}</option>`).join(''); sel.value=cur; }
+function exportar(){ const ws=XLSX.utils.json_to_sheet(MERGED), wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Inventario'); XLSX.writeFile(wb,'inventario-naturisa-'+new Date().toISOString().slice(0,10)+'.xlsx'); }
+function toggleAuto(){ pararAuto(); if(el('autoChk').checked){ TIMER=setInterval(refrescar,+val('intervalSel')*1000); setLive(true);} else setLive(false); }
+function pararAuto(){ if(TIMER){ clearInterval(TIMER); TIMER=null; } }
+function setLive(on){ el('liveDot').className='dot'+(on?'':' off'); el('liveTxt').textContent=on?'en vivo':'pausado'; }
+function iniciar(){ el('loginModal').style.display='none'; el('who').textContent=localStorage.getItem(US)||''; refrescar(); toggleAuto(); }
+if(getToken()) iniciar();
+</script>
+</body>
+</html>
